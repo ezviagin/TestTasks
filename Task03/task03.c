@@ -8,8 +8,7 @@
 #define THREAD_TOTAL (THREAD_INCREMENT + THREAD_DECREMENT)
 #define COUNT                       10
 
-HANDLE hEvent;
-HANDLE hStopEvent;
+HANDLE hEventArr[2];
 
 typedef struct VALUE_
 {
@@ -23,13 +22,13 @@ DWORD WINAPI IncrementValue(LPVOID lpParameter)
     VALUE* v = (VALUE*)lpParameter;
 
     while (TRUE) {
-        DWORD dwWaitStop = WaitForSingleObject(hStopEvent, 0);
+        DWORD dwWaitStop = WaitForSingleObject(hEventArr[1], 0);
         if (dwWaitStop != WAIT_OBJECT_0) {
             printf("Couldnt wait for WAIT_OBJECT_0\n");
             return -1;
         }
 
-        DWORD dwWaitResult = WaitForSingleObject(hEvent, INFINITE);
+        DWORD dwWaitResult = WaitForSingleObject(hEventArr[0], INFINITE);
         if (dwWaitResult != WAIT_OBJECT_0) {
             printf("Couldnt wait for WAIT_OBJECT_0\n");
             return -1;
@@ -47,7 +46,7 @@ DWORD WINAPI IncrementValue(LPVOID lpParameter)
         
         printf("Exit  increment: %#x\n", GetCurrentThreadId());
         Sleep(250);
-        SetEvent(hEvent);
+        SetEvent(hEventArr[0]);
     }
     printf("+ + + IncrementValue final result: %2d\n", v->value);
 
@@ -59,13 +58,13 @@ DWORD WINAPI DecrementValue(LPVOID lpParameter)
     VALUE* v = (VALUE*)lpParameter;
 
     while (TRUE) {
-        DWORD dwWaitStop = WaitForSingleObject(hStopEvent, 0);
+        DWORD dwWaitStop = WaitForSingleObject(hEventArr[1], 0);
         if (dwWaitStop != WAIT_OBJECT_0) {
             printf("Couldnt wait for WAIT_OBJECT_0\n");
             return -1;
         }
 
-        DWORD dwWaitResult = WaitForSingleObject(hEvent, INFINITE);
+        DWORD dwWaitResult = WaitForSingleObject(hEventArr[0], INFINITE);
         if (dwWaitResult != WAIT_OBJECT_0) {
             printf("Couldnt wait for WAIT_OBJECT_0\n");
             return -1;
@@ -83,7 +82,7 @@ DWORD WINAPI DecrementValue(LPVOID lpParameter)
      
         printf("Exit  decrement: %#x\n", GetCurrentThreadId());
         Sleep(250);
-        SetEvent(hEvent);
+        SetEvent(hEventArr[0]);
     }
     printf("- - - DecrementValue final result: %2d\n", v->value);
     
@@ -103,14 +102,14 @@ int main(int argc, char**argv)
     memset(v, 0, sizeof(VALUE));
     
     do {
-        hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
-        if (hEvent == NULL) {
+        hEventArr[0] = CreateEvent(NULL, FALSE, FALSE, NULL);
+        if (hEventArr[0] == NULL) {
             printf("CreateEvent() failed. Code %d\n", GetLastError());
             break;
         }
 
-        hStopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-        if (hStopEvent == NULL) {
+        hEventArr[1] = CreateEvent(NULL, TRUE, FALSE, NULL);
+        if (hEventArr[1] == NULL) {
             printf("CreateEvent() failed. Code %d\n", GetLastError());
             break;
         }
@@ -129,13 +128,13 @@ int main(int argc, char**argv)
             break;
         }
 
-        SetEvent(hEvent);
+        SetEvent(hEventArr[0]);
         
         //ResetEvent(hStopEvent);
-        SetEvent(hStopEvent);
+        SetEvent(hEventArr[1]);
         if (_getch()) {
             printf("Button is pressed. Stop all threads\n");
-            ResetEvent(hStopEvent);
+            ResetEvent(hEventArr[1]);
         }
 
         INT wait = WaitForMultipleObjects(THREAD_TOTAL, hThreadArr, TRUE, INFINITE);
@@ -144,8 +143,7 @@ int main(int argc, char**argv)
             break;
         }
 
-        CloseHandle(hEvent);
-        CloseHandle(hStopEvent);
+        CloseHandle(hEventArr);
 
     } while (FALSE);
     
