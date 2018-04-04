@@ -16,30 +16,23 @@ typedef struct VALUE_
     INT value;
     INT vmax;
     INT vmin;
-    bool isRunning;
 } VALUE;
 
 DWORD WINAPI IncrementValue(LPVOID lpParameter)
 {
     VALUE* v = (VALUE*)lpParameter;
 
-    while (v->isRunning) {
-        DWORD dwWaitResult = WaitForSingleObject(hEvent, INFINITE);
-        if (dwWaitResult != WAIT_OBJECT_0) {
-            printf("Couldnt wait for WAIT_OBJECT_0\n");
-            return -1;
-        }
-        ResetEvent(hEvent);
-
-        DWORD dwWaitStop = WaitForSingleObject(hStopEvent, INFINITE);
+    while (TRUE) {
+        DWORD dwWaitStop = WaitForSingleObject(hStopEvent, 0);
         if (dwWaitStop != WAIT_OBJECT_0) {
             printf("Couldnt wait for WAIT_OBJECT_0\n");
             return -1;
         }
-        if (_kbhit() != 0) {
-            printf("Button is pressed. Stop all threads\n");
-            ResetEvent(hStopEvent);
-            _getch();
+
+        DWORD dwWaitResult = WaitForSingleObject(hEvent, INFINITE);
+        if (dwWaitResult != WAIT_OBJECT_0) {
+            printf("Couldnt wait for WAIT_OBJECT_0\n");
+            return -1;
         }
 
         printf("Enter increment: %#x\n", GetCurrentThreadId());
@@ -52,7 +45,7 @@ DWORD WINAPI IncrementValue(LPVOID lpParameter)
             v->vmin = v->value;
         printf("+ IncrementValue: actual value = %2d\n", v->value);
         
-        printf("Exit increment: %#x\n", GetCurrentThreadId());
+        printf("Exit  increment: %#x\n", GetCurrentThreadId());
         Sleep(250);
         SetEvent(hEvent);
     }
@@ -65,26 +58,21 @@ DWORD WINAPI DecrementValue(LPVOID lpParameter)
 {
     VALUE* v = (VALUE*)lpParameter;
 
-    while (v->isRunning) {
+    while (TRUE) {
+        DWORD dwWaitStop = WaitForSingleObject(hStopEvent, 0);
+        if (dwWaitStop != WAIT_OBJECT_0) {
+            printf("Couldnt wait for WAIT_OBJECT_0\n");
+            return -1;
+        }
+
         DWORD dwWaitResult = WaitForSingleObject(hEvent, INFINITE);
         if (dwWaitResult != WAIT_OBJECT_0) {
             printf("Couldnt wait for WAIT_OBJECT_0\n");
             return -1;
         }
-        ResetEvent(hEvent);
-
-        DWORD dwWaitStop = WaitForSingleObject(hStopEvent, INFINITE);
-        if (dwWaitStop != WAIT_OBJECT_0) {
-            printf("Couldnt wait for WAIT_OBJECT_0\n");
-            return -1;
-        }
-        if (_kbhit() != 0) {
-            printf("Button is pressed. Stop all threads\n");
-            ResetEvent(hStopEvent);
-            _getch();
-        }
-        
+               
         printf("Enter decrement: %#x\n", GetCurrentThreadId());
+        
         v->value -= 2;
 
         if (v->value > v->vmax)
@@ -93,7 +81,7 @@ DWORD WINAPI DecrementValue(LPVOID lpParameter)
             v->vmin = v->value;
         printf("- DecrementValue: actual value = %2d\n", v->value);
      
-        printf("Exit decrement: %#x\n", GetCurrentThreadId());
+        printf("Exit  decrement: %#x\n", GetCurrentThreadId());
         Sleep(250);
         SetEvent(hEvent);
     }
@@ -113,16 +101,15 @@ int main(int argc, char**argv)
         return -1;
     }
     memset(v, 0, sizeof(VALUE));
-    v->isRunning = true;
     
     do {
-        hEvent = CreateEvent(NULL, FALSE, FALSE, "task03");
+        hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
         if (hEvent == NULL) {
             printf("CreateEvent() failed. Code %d\n", GetLastError());
             break;
         }
 
-        hStopEvent = CreateEvent(NULL, TRUE, FALSE, "task03");
+        hStopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
         if (hStopEvent == NULL) {
             printf("CreateEvent() failed. Code %d\n", GetLastError());
             break;
@@ -143,7 +130,13 @@ int main(int argc, char**argv)
         }
 
         SetEvent(hEvent);
+        
+        //ResetEvent(hStopEvent);
         SetEvent(hStopEvent);
+        if (_getch()) {
+            printf("Button is pressed. Stop all threads\n");
+            ResetEvent(hStopEvent);
+        }
 
         INT wait = WaitForMultipleObjects(THREAD_TOTAL, hThreadArr, TRUE, INFINITE);
         if (wait == WAIT_FAILED) {
