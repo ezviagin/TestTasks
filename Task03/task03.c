@@ -26,6 +26,7 @@ DWORD WINAPI IncrementValue(LPVOID lpParameter)
         DWORD dwWaitStop = WaitForMultipleObjects(EVENT_COUNT, hEventArr, FALSE, INFINITE);
         if (dwWaitStop != WAIT_OBJECT_0) {
             printf("Couldnt wait for WAIT_OBJECT_0\n");
+            SetEvent(hEventArr[1]);
             return -1;
         }
         printf("Enter increment: %#x\n", GetCurrentThreadId());
@@ -55,9 +56,9 @@ DWORD WINAPI DecrementValue(LPVOID lpParameter)
         DWORD dwWaitStop = WaitForMultipleObjects(EVENT_COUNT, hEventArr, FALSE, INFINITE);
         if (dwWaitStop != WAIT_OBJECT_0) {
             printf("Couldnt wait for WAIT_OBJECT_0\n");
+            SetEvent(hEventArr[1]);
             return -1;
         }
-
         printf("Enter decrement: %#x\n", GetCurrentThreadId());
         
         v->value -= 2;
@@ -70,7 +71,7 @@ DWORD WINAPI DecrementValue(LPVOID lpParameter)
      
         printf("Exit  decrement: %#x\n", GetCurrentThreadId());
         Sleep(250);
-        SetEvent(hEventArr[0]);
+        SetEvent(hEventArr[0]); 
     }
     printf("- - - DecrementValue final result: %2d\n", v->value);
     
@@ -106,7 +107,7 @@ int main(int argc, char**argv)
             if (hThreadArr[i] == NULL) {
                 printf("hThreadArrArray[%d] failed, error %d\n", i, GetLastError());
                 break;
-            }
+            } 
         }
         hThreadArr[2] = CreateThread(NULL, 0, DecrementValue, &v->value, 0, &hThreadArrId[2]);
         if (hThreadArr[2] == NULL) {
@@ -118,16 +119,17 @@ int main(int argc, char**argv)
         
         _getch();
         printf("Button is pressed. Stop all threads\n");
-        SetEvent(hEventArr[1]);
-        break;
+        ResetEvent(hEventArr[1]);
+        //break;
 
-        INT wait = WaitForMultipleObjects(THREAD_TOTAL, hThreadArr, TRUE, INFINITE);
+        /*INT wait = WaitForMultipleObjects(THREAD_TOTAL, hThreadArr, TRUE, INFINITE);
         if (wait == WAIT_FAILED) {
             printf("The function WaitForMultipleObjects() has been failed\n");
             break;
-        }
+        }*/
 
-        CloseHandle(hEventArr);
+        for (USHORT i = 0; i < 2; ++i)
+            CloseHandle(hEventArr[i]);
 
     } while (FALSE);
     
