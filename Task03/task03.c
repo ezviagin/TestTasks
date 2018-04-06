@@ -3,11 +3,11 @@
 #include <windows.h>
 #include <stdbool.h>
 
+#define COUNT                       10
+#define EVENT_COUNT                 2
 #define THREAD_INCREMENT            2
 #define THREAD_DECREMENT            1
 #define THREAD_TOTAL (THREAD_INCREMENT + THREAD_DECREMENT)
-#define COUNT                       10
-#define EVENT_COUNT                 2
 
 HANDLE hEventArr[EVENT_COUNT];
 
@@ -25,13 +25,15 @@ DWORD WINAPI IncrementValue(LPVOID lpParameter)
     while (TRUE) {
         DWORD dwWaitStop = WaitForMultipleObjects(EVENT_COUNT, hEventArr, FALSE, INFINITE);
         if (dwWaitStop != WAIT_OBJECT_0) {
-            printf("Couldnt wait for WAIT_OBJECT_0\n");
-            SetEvent(hEventArr[1]);
-            return -1;
+            printf("Couldnt wait for WAIT_OBJECT_0 (IncrementValue)  %#x\n", GetCurrentThreadId());
+            if (1 == (dwWaitStop - WAIT_OBJECT_0)) 
+                printf("This is STOP event (IncrementValue), %#x\n", GetCurrentThreadId());
+            break;
         }
+        
         printf("Enter increment: %#x\n", GetCurrentThreadId());
 
-        ++(v->value);
+        ++v->value;
        
         if (v->value > v->vmax)
             v->vmax = v->value;
@@ -55,9 +57,11 @@ DWORD WINAPI DecrementValue(LPVOID lpParameter)
     while (TRUE) {
         DWORD dwWaitStop = WaitForMultipleObjects(EVENT_COUNT, hEventArr, FALSE, INFINITE);
         if (dwWaitStop != WAIT_OBJECT_0) {
-            printf("Couldnt wait for WAIT_OBJECT_0\n");
-            SetEvent(hEventArr[1]);
-            return -1;
+            printf("Couldnt wait for WAIT_OBJECT_0 (DecrementValue)  %#x\n", GetCurrentThreadId());
+
+            if (1 == (dwWaitStop - WAIT_OBJECT_0))
+                printf("This is STOP event (DecrementValue), %#x\n", GetCurrentThreadId());
+            break;
         }
         printf("Enter decrement: %#x\n", GetCurrentThreadId());
         
@@ -119,18 +123,16 @@ int main(int argc, char**argv)
         
         _getch();
         printf("Button is pressed. Stop all threads\n");
-        ResetEvent(hEventArr[1]);
-        //break;
+        SetEvent(hEventArr[1]);
+        
+        for (USHORT i = 0; i < EVENT_COUNT; ++i)
+            CloseHandle(hEventArr[i]);
 
-        /*INT wait = WaitForMultipleObjects(THREAD_TOTAL, hThreadArr, TRUE, INFINITE);
+        INT wait = WaitForMultipleObjects(THREAD_TOTAL, hThreadArr, TRUE, INFINITE);
         if (wait == WAIT_FAILED) {
             printf("The function WaitForMultipleObjects() has been failed\n");
             break;
-        }*/
-
-        for (USHORT i = 0; i < 2; ++i)
-            CloseHandle(hEventArr[i]);
-
+        }
     } while (FALSE);
     
     printf("MIN: %d, MAX: %d\n", v->vmin, v->vmax);
