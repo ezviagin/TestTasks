@@ -4,6 +4,9 @@
 
 #define BUFF_SIZE           64000
 #define THREAD_COUNT        1
+#define FILE_COUNT          2
+
+HANDLE hEventHold;
 
 typedef struct COPY_FILE_
 {
@@ -15,12 +18,15 @@ DWORD WINAPI AsyncCopyThread(LPVOID FilesToCopy)
 {
     PCOPY_FILE Files = (PCOPY_FILE)FilesToCopy;
 
-    HANDLE hSource = CreateFile(Files->FileIn, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, FILE_FLAG_OVERLAPPED, NULL);
+    printf("%ls and %ls\n", Files->FileIn, Files->FileOut);
+
+    /* Test names as string (for a while) */
+    HANDLE hSource = CreateFile(L"D:\\HLKStudio.iso", GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, FILE_FLAG_OVERLAPPED);
     if (hSource == INVALID_HANDLE_VALUE) {
         printf("hSource: Invalid Handle Value, error %d\n", GetLastError());
         return -1;
     }
-    HANDLE hTarget = CreateFile(Files->FileOut, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    HANDLE hTarget = CreateFile(L"D:\\test.iso", GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hTarget == INVALID_HANDLE_VALUE) {
         printf("hTarget: Invalid Handle Value, error %d\n", GetLastError());
         CloseHandle(hSource);
@@ -39,6 +45,12 @@ DWORD WINAPI AsyncCopyThread(LPVOID FilesToCopy)
     DWORD dwCountRead = 0;
     DWORD dwCountWrite = 0;
 
+    //DWORD WaitEvent = WaitForSingleObject(hEventHold, INFINITE);
+    /*if (WaitEvent == WAIT_FAILED) {
+        printf("AsyncCopyThread(): WaitForSingleObject() failed, error %d\n", GetLastError());
+        return -1;
+    }*/
+
     while (TRUE) {
         if (!ReadFile(hSource, buf, BUFF_SIZE, &dwCountRead, NULL)) {
             printf("Can't read file, error %d\n", GetLastError());
@@ -51,6 +63,7 @@ DWORD WINAPI AsyncCopyThread(LPVOID FilesToCopy)
             break;
         }
     }
+    //SetEvent(hEventHold);
 
     free(buf);
     CloseHandle(hSource);
@@ -76,10 +89,16 @@ INT FileCopyEx(WCHAR* wFileOut, WCHAR* wFileIn)
             break;
         }
 
-        wcscpy_s(Files->FileIn, inplen, wFileIn);
-        wcscpy_s(Files->FileOut, outlen, wFileOut);
+        wcscpy_s(Files->FileIn, sizeof(Files->FileIn) / sizeof(WCHAR), wFileIn);
+        wcscpy_s(Files->FileOut, sizeof(Files->FileIn) / sizeof(WCHAR), wFileOut);
 
         printf("Copying \"%ls\" as \"%ls\"\n", Files->FileIn, Files->FileOut);
+
+        hEventHold = CreateEvent(NULL, FALSE, FALSE, NULL);
+        if (hEventHold == NULL) {
+            printf("CreateEvent() failed. Code %d\n", GetLastError());
+            break;
+        }
 
         HANDLE hThread = CreateThread(NULL, 0, AsyncCopyThread, &Files, 0, &hThreadId);
         if (hThread == NULL) {
@@ -87,9 +106,11 @@ INT FileCopyEx(WCHAR* wFileOut, WCHAR* wFileIn)
             break;
         }
 
-        DWORD wait = WaitForSingleObject(hThread, INFINITE);
-        if (wait != WAIT_FAILED) {
-            printf("WaitForSingleObject() fail error %d\n", GetLastError());
+        //SetEvent(hEventHold);
+
+        DWORD WaitThread = WaitForSingleObject(hThread, INFINITE);
+        if (WaitThread != WAIT_FAILED) {
+            printf("FileCopyEx(): WaitForSingleObject() fail error %d\n", GetLastError());
             break;
         }
     } while (FALSE);
@@ -110,27 +131,21 @@ INT wmain(INT argc, WCHAR** argv)
     }
     
     if (!wcscmp(argv[1], argv[2])) {
-        printf("Write output file name different from input\n");
+        printf("File already exists\n");
         return -1;
     }
 
-    WCHAR* out = (WCHAR*)malloc(MAX_PATH * sizeof(WCHAR));
-    if (out == NULL) {
-        printf("malloc() failed\n");
-        return -1;
-    }
-    wcscpy_s(out, MAX_PATH * sizeof(WCHAR), argv[1]);
-    
-    HANDLE hSource = CreateFile(out, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    /* Test for Valid Handle */
+    HANDLE hSource = CreateFile(argv[1], GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hSource == INVALID_HANDLE_VALUE) {
         printf("OUT: Invalid Handle Value, error %d\n", GetLastError());
         return -1;
     }
 
-    INT cpy = FileCopyEx(argv[2], argv[1]);
-    printf("File \"%ls\" is copied to \"%ls\"\n", argv[1], argv[2]);
+    INT ReturnValue = FileCopyEx(argv[2], argv[1]);
+    /* Future return checks... */
 
-    free(out);
+    printf("File \"%ls\" is copied to \"%ls\"\n", argv[1], argv[2]);
 
     _getch();
     return 0;
