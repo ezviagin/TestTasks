@@ -5,6 +5,7 @@
 #define BUFF_SIZE           64000
 #define THREAD_COUNT        1
 #define FILE_COUNT          2
+#define THREAD_DELAY        100
 
 HANDLE hEventHold;
 
@@ -17,16 +18,14 @@ typedef struct COPY_FILE_
 DWORD WINAPI AsyncCopyThread(LPVOID FilesToCopy)
 {
     PCOPY_FILE Files = (PCOPY_FILE)FilesToCopy;
-
-    printf("%ls and %ls\n", Files->FileIn, Files->FileOut);
-
+    
     /* Test names as string (for a while) */
-    HANDLE hSource = CreateFile(L"D:\\HLKStudio.iso", GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, FILE_FLAG_OVERLAPPED);
+    HANDLE hSource = CreateFile(L"D:\\HLKStudio.iso", GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, NULL);
     if (hSource == INVALID_HANDLE_VALUE) {
         printf("hSource: Invalid Handle Value, error %d\n", GetLastError());
         return -1;
     }
-    HANDLE hTarget = CreateFile(L"D:\\test.iso", GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    HANDLE hTarget = CreateFile(L"D:\\test.iso", GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, NULL);
     if (hTarget == INVALID_HANDLE_VALUE) {
         printf("hTarget: Invalid Handle Value, error %d\n", GetLastError());
         CloseHandle(hSource);
@@ -42,34 +41,82 @@ DWORD WINAPI AsyncCopyThread(LPVOID FilesToCopy)
     }
     ZeroMemory(buf, BUFF_SIZE);
 
-    DWORD dwCountRead = 0;
-    DWORD dwCountWrite = 0;
-
-    //DWORD WaitEvent = WaitForSingleObject(hEventHold, INFINITE);
-    /*if (WaitEvent == WAIT_FAILED) {
-        printf("AsyncCopyThread(): WaitForSingleObject() failed, error %d\n", GetLastError());
+    hEventHold = CreateEvent(NULL, FALSE, FALSE, NULL);
+    if (hEventHold == NULL) {
+        printf("CreateEvent() failed. Code %d\n", GetLastError());
+        CloseHandle(hSource);
+        CloseHandle(hTarget);
+        free(buf);
         return -1;
-    }*/
-
-    while (TRUE) {
-        if (!ReadFile(hSource, buf, BUFF_SIZE, &dwCountRead, NULL)) {
-            printf("Can't read file, error %d\n", GetLastError());
-            break;
-        }
-        if (dwCountRead == 0)
-            break;
-        if (!WriteFile(hTarget, buf, BUFF_SIZE, &dwCountWrite, NULL)) {
-            printf("Can't write file, error %d\n", GetLastError());
-            break;
-        }
     }
-    //SetEvent(hEventHold);
+
+    OVERLAPPED* Overlapped = (OVERLAPPED*)malloc(sizeof(OVERLAPPED));
+    if (Overlapped == NULL) {
+        printf("malloc(OVERLAPPED) failed, error %d\n", GetLastError());
+        CloseHandle(hSource);
+        CloseHandle(hTarget);
+        CloseHandle(hEventHold);
+        free(buf);
+        return -1;
+    }
+    ZeroMemory(Overlapped, sizeof(OVERLAPPED));
+    Overlapped->hEvent = hEventHold;
+
+    INT BytesWritten = 0;
+    INT BytesRead = 0;
+
+    INT RetValWrite = 0;
+    INT RetValRead = 0;
+    INT RetValOverlapped = 0;
+    
+    BOOL isRunning = TRUE;
+
+    while (TRUE)
+    {
+        RetValRead = ReadFile(hSource, buf, BUFF_SIZE, NULL, Overlapped);
+        if (!RetValRead && (RetValRead == ERROR_IO_PENDING)) {
+            printf("AsyncCopyThread(): ReadFile() pending, %d\n", GetLastError());
+
+            RetValOverlapped = GetOverlappedResult(Overlapped->hEvent, Overlapped, NULL, TRUE);
+            if (RetValOverlapped == FALSE && (RetValOverlapped == ERROR_HANDLE_EOF)) {
+                printf("AsyncCopyThread(): GetOverlappedResult() - EOF, error %d\n", GetLastError());
+                break;
+            }
+        }
+
+        RetValWrite = WriteFile(hTarget, buf, BUFF_SIZE, NULL, Overlapped);
+        if (!RetValWrite && (RetValWrite == ERROR_IO_PENDING)) {
+            printf("AsyncCopyThread(): WriteFile() pending, %d\n", GetLastError());
+            
+            RetValOverlapped = GetOverlappedResult(Overlapped->hEvent, Overlapped, NULL, TRUE);
+            if (RetValOverlapped == 0) {
+                printf("AsyncCopyThread(): GetOverlappedResult() failed, error %d\n", GetLastError());
+                break;
+            }
+            
+        }
+        
+        /* Trying to catch bag: copying is stopped in this value and it copies (n * BUFF_SIZE) a few times and stops for ~5 seconds */
+        if (Overlapped->Offset > 4194313000)
+            printf("Overlapped->Offset = %lld\n", Overlapped->Offset);
+        /*if (GetLastError() == EOF) {
+            printf("\nEnd of file reached\n");
+        }*/
+
+        Overlapped->Offset += (ULONG)Overlapped->InternalHigh;
+
+        //BytesWritten += GetQueuedCompletionStatus();
+        //CancelIo(hTarget);
+    }
 
     free(buf);
+    free(Overlapped);
+    
+    CloseHandle(hEventHold);
     CloseHandle(hSource);
     CloseHandle(hTarget);
     
-    return 0;
+    return Overlapped->Offset;;
 }
 
 INT FileCopyEx(WCHAR* wFileOut, WCHAR* wFileIn)
@@ -94,22 +141,14 @@ INT FileCopyEx(WCHAR* wFileOut, WCHAR* wFileIn)
 
         printf("Copying \"%ls\" as \"%ls\"\n", Files->FileIn, Files->FileOut);
 
-        hEventHold = CreateEvent(NULL, FALSE, FALSE, NULL);
-        if (hEventHold == NULL) {
-            printf("CreateEvent() failed. Code %d\n", GetLastError());
-            break;
-        }
-
         HANDLE hThread = CreateThread(NULL, 0, AsyncCopyThread, &Files, 0, &hThreadId);
         if (hThread == NULL) {
             printf("CreateThread failed, %d\n", GetLastError());
             break;
         }
 
-        //SetEvent(hEventHold);
-
         DWORD WaitThread = WaitForSingleObject(hThread, INFINITE);
-        if (WaitThread != WAIT_FAILED) {
+        if (WaitThread == WAIT_FAILED) {
             printf("FileCopyEx(): WaitForSingleObject() fail error %d\n", GetLastError());
             break;
         }
@@ -141,6 +180,7 @@ INT wmain(INT argc, WCHAR** argv)
         printf("OUT: Invalid Handle Value, error %d\n", GetLastError());
         return -1;
     }
+
 
     INT ReturnValue = FileCopyEx(argv[2], argv[1]);
     /* Future return checks... */
